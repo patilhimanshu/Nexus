@@ -1,0 +1,15 @@
+extension_map = {
+    ".png" : "Image",
+    ".jpg" : "Image",
+    ".jpeg" : "Image",
+    ".gif" : "Image",
+    ".pdf" : "Document",
+    ".doc" : "Document",
+    ".docx" : "Document",
+    ".mp4" : "Video",
+    ".webm" : "Video",
+    ".mp3" : "Audio",
+    ".zip" : "Archive",
+    ".py" : "Python",
+    ".xlsx" : "Excel",
+}

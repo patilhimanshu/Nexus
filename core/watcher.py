@@ -1,11 +1,15 @@
+path = "C:/Users/umesh/Downloads"
 def start_watching():
-    path = "C:/Users/umesh/Downloads"
     from watchdog.observers import Observer
     from watchdog.events import FileSystemEventHandler
     import time
     import os
     last_modified = {}
     class NexusObserver(FileSystemEventHandler):
+        files = os.listdir(path)
+        filename = []
+        for file in files:
+            filename.append(file)
         print("Watching for changes....")
         def on_created(self, event):
             print(f"Event {event.src_path} created")
