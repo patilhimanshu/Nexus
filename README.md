@@ -1,26 +1,55 @@
-````md id="fullreadmev2"
 # Nexus
 
-Nexus is a modular AI-powered workspace assistant built with Python.
+Nexus is a local-first AI companion and workspace intelligence platform built with Python.
 
-The goal of Nexus is to automate digital workflows, organize files intelligently, and evolve into a scalable personal productivity and AI assistant system.
+Its mission is to help users manage files, tasks, projects, knowledge, and digital workflows through a unified companion experience.
+
+Rather than replacing existing AI systems, Nexus acts as an orchestration layer that connects users with their tools, data, and preferred AI providers.
 
 ---
 
-## Objectives
+## Vision
 
-* Automate repetitive workspace tasks
-* Organize files intelligently
-* Build modular event-driven systems
-* Learn practical AI integration
-* Explore automation and productivity engineering
-* Develop scalable software architecture skills
+Nexus is being designed around a simple principle:
+
+> User data belongs to the user.
+
+Memory, preferences, tasks, project information, and workspace knowledge should remain under user control whenever possible.
+
+Nexus aims to become a companion that understands a user's digital environment while allowing AI providers, tools, and services to remain replaceable.
+
+---
+
+## Core Principles
+
+* Local-first architecture
+* User-owned data and memory
+* Modular and scalable design
+* AI-provider independence
+* Workspace intelligence over chatbot functionality
+* Automation through safe and observable systems
+* Extensible tool ecosystem
+
+---
+
+## Long-Term Objectives
+
+* Intelligent file organization
+* Workspace awareness
+* Task and project management
+* Personal memory systems
+* AI-assisted productivity
+* Desktop and application awareness
+* Multi-provider AI integration
+* Research and knowledge assistance
+* Personal workflow automation
 
 ---
 
 ## Current Features
 
 * Startup filesystem scanning
+* Recursive directory traversal
 * Real-time filesystem monitoring
 * File creation, deletion, modification, and move detection
 * Modular processing pipeline
@@ -28,6 +57,7 @@ The goal of Nexus is to automate digital workflows, organize files intelligently
 * Unknown extension fallback handling
 * Event debouncing and spam filtering
 * Intelligent move event filtering
+* Metadata collection foundation
 * Centralized configuration system
 * Modular event-driven architecture
 
@@ -35,101 +65,40 @@ The goal of Nexus is to automate digital workflows, organize files intelligently
 
 ## Architecture
 
-Nexus uses a modular event-driven architecture where scanners and filesystem watchers feed file paths into a centralized processing pipeline.
+Nexus follows a layered architecture where workspace awareness, memory systems, automation systems, and AI integrations operate as independent modules.
 
-The processing pipeline forwards files into classification systems and future automation modules, enabling scalable workspace intelligence and automation workflows.
+This enables Nexus to grow from a file intelligence platform into a broader companion system without requiring major architectural rewrites.
 
 ### Current Flow
 
-```text
 Scanner ──┐
-           ├──> Pipeline ───> Classifier
+├──> Pipeline ───> Classifier
 Watcher ──┘
-````
+
+### Planned Evolution
+
+Files ─────┐
+Tasks ─────┤
+Memory ────┤
+Projects ──┤
+Desktop ───┤
+├──> Nexus Core ───> Tool Layer ───> AI Providers
+User ──────┘
+
+AI Providers may include cloud-based or local models and are designed to be replaceable components rather than core dependencies.
 
 ---
 
-## Planned Features
+## Development Status
 
-* Recursive intelligent scanning
-* Smart file organization
-* Duplicate detection
-* AI-powered file summaries
-* Semantic file search
-* Intelligent filtering systems
-* File metadata analysis
-* Automatic folder management
-* Voice commands
-* Task tracking
-* Reminder system
-* Productivity dashboard
-* App launcher
-* Study assistant tools
-* AI-powered workspace intelligence
+Nexus is currently in active experimental development.
 
----
+The project is focused on building strong foundations in:
 
-## Tech Stack
+* Filesystem intelligence
+* Metadata systems
+* Modular architecture
+* Automation workflows
+* Local-first companion design
 
-### Current
-
-* Python
-* Watchdog
-* Event-driven filesystem monitoring
-* Modular processing pipelines
-* Git & GitHub
-
-### Planned
-
-* SQLite
-* AI APIs
-* Local AI models
-* GUI frameworks
-* Vector search systems
-* Embedding databases
-* Automation orchestration systems
-
----
-
-## Project Structure
-
-```text
-Nexus/
-│
-├── core/
-│   ├── watcher.py
-│   ├── scanner.py
-│   ├── pipeline.py
-│   └── classifier.py
-│
-├── config/
-│   ├── settings.py
-│   └── file_types.py
-│
-├── logs/
-├── tests/
-│
-├── main.py
-├── requirements.txt
-├── README.md
-└── .gitignore
-```
-
----
-
-## Status
-
-Currently in active early development (Version 0.2).
-
-Nexus now includes a modular event-driven file processing system with startup scanning, real-time filesystem monitoring, centralized processing pipelines, and intelligent file type classification.
-
-The project is being developed as a long-term learning and engineering project focused on automation, AI integration, intelligent workspace systems, and scalable software design.
-
----
-
-## Vision
-
-Nexus is intended to evolve beyond a simple file organizer into a scalable AI-powered workspace operating system capable of intelligent automation, semantic understanding, productivity enhancement, and adaptive digital assistance.
-
-```
-```
+Future releases will gradually expand Nexus into a broader AI companion platform.
