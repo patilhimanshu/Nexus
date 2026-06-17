@@ -1,0 +1,367 @@
+# ======================================================
+# ============== CHARLIE — CHAT BOT EDITION ============
+# ======================================================
+# Upgraded from command-bot Charlie:
+#   - removed face recognition gate
+#   - loose/fuzzy phrase matching instead of exact keywords
+#   - file search + app launching via os/subprocess
+#   - wikipedia actually wired in
+#   - config block at top instead of hardcoded paths
+
+import os
+import sys
+import random
+import subprocess
+import webbrowser
+import datetime as dt
+from difflib import SequenceMatcher
+
+import psutil
+import pyttsx3
+import wikipedia
+
+# ======================================================
+# ===================== CONFIG =========================
+# ======================================================
+# Change these paths to match your machine. No more hardcoded
+# C:/Users/Aahil/... buried in the code — one place to edit.
+
+MASTER = "Aahil"
+SEARCH_ROOT = os.path.expanduser("~")        # where file search starts
+MUSIC_DIR = os.path.join(os.path.expanduser("~"), "Music")
+FUZZY_THRESHOLD = 0.72                        # 0-1, higher = stricter matching
+
+# ======================================================
+# ================= VOICE SETUP =========================
+# ======================================================
+
+voice_enabled = input("Enable voice? (Y/N): ").strip().lower() == "y"
+
+def speak(text):
+    print("Charlie:", text)
+    if voice_enabled:
+        engine = pyttsx3.init("sapi5")
+        engine.setProperty("voice", engine.getProperty("voices")[0].id)
+        engine.say(text)
+        engine.runAndWait()
+        engine.stop()
+
+# ======================================================
+# ================= CONTEXT MEMORY ======================
+# ======================================================
+# Still in-RAM for now — this is the part companion.db will
+# replace next, so the bot remembers across restarts.
+
+context = {
+    "last_intent": None,
+    "last_query": None
+}
+
+# ======================================================
+# ============== FUZZY INTENT MATCHING ==================
+# ======================================================
+# Old Charlie: exact keyword match (`"music" in q`) — breaks on
+# "play me a song please" if phrasing drifts even slightly.
+# New Charlie: each intent has trigger PHRASES, not just words,
+# and we score the closest match instead of requiring an exact hit.
+
+INTENT_PHRASES = {
+    "SEARCH":        ["search for", "find me", "look up", "search"],
+    "PLAY_MUSIC":     ["play music", "play a song", "play song"],
+    "OPEN_EDITOR":    ["open notepad", "open editor", "open text editor"],
+    "OPEN_CMD":       ["open cmd", "open terminal", "open command prompt"],
+    "OPEN_YOUTUBE":   ["open youtube", "go to youtube"],
+    "OPEN_GOOGLE":    ["open google", "go to google"],
+    "WIKI_SEARCH":    ["what is", "who is", "tell me about", "explain"],
+    "TIME":           ["what time is it", "tell me the time", "current time"],
+    "SYSTEM_REPORT":  ["system report", "system status", "how is my pc doing"],
+    "FIND_FILE":      ["find file", "find folder", "locate file", "search my pc for"],
+    "OPEN_APP":       ["open app", "launch", "start program", "run program"],
+    "AGAIN":          ["do it again", "again", "repeat that"],
+    "EXIT":           ["exit", "quit", "bye", "goodbye", "shut down"],
+
+    # ---- small talk: this is what makes it feel human, not a CLI ----
+    "GREETING_CASUAL": ["whats up", "what's up", "wassup", "sup", "hows it going",
+                         "how's it going", "yo"],
+    "HOW_ARE_YOU":      ["how are you", "how you doing", "you good", "you alright"],
+    "WHO_ARE_YOU":      ["who are you", "what are you", "what can you do"],
+    "THANKS":           ["thank you", "thanks", "appreciate it"],
+    "BORED":            ["im bored", "i'm bored", "bored"],
+}
+
+# Small talk gets MULTIPLE possible replies so it doesn't feel like a
+# scripted bot saying the exact same line every single time.
+SMALL_TALK_RESPONSES = {
+    "GREETING_CASUAL": [
+        "All great, what about you?",
+        "Living my best digital life. You?",
+        "Not much, just sitting here waiting for you to ask me something wild.",
+        "Same old, same old. What's good with you?"
+    ],
+    "HOW_ARE_YOU": [
+        "I'm built different, literally can't have a bad day.",
+        "Doing great. No bugs today, surprisingly.",
+        "Can't complain, I don't have feelings... or do I?",
+        "I'm good, thanks for asking, that's rare."
+    ],
+    "WHO_ARE_YOU": [
+        "I'm Charlie. I search stuff, find files, open apps, and occasionally roast you.",
+        "Your personal assistant. Think Jarvis, but with way less budget.",
+        "Charlie. I do searches, file hunting, app launching, and vibes."
+    ],
+    "THANKS": [
+        "Anytime.",
+        "That's what I'm here for.",
+        "Don't mention it.",
+        "No problem, boss."
+    ],
+    "BORED": [
+        "Want me to open YouTube or find something for you?",
+        "Boredom is just a search query away. What do you wanna look up?",
+        "Same honestly. Wanna check the system report for fun?"
+    ],
+}
+
+def similarity(a, b):
+    return SequenceMatcher(None, a, b).ratio()
+
+def detect_intent(q):
+    """
+    Loose matching: for every intent, check every trigger phrase.
+    A phrase 'wins' if it's a substring OR similar enough (fuzzy ratio)
+    to some sliding window of the query. This is still NOT a real LLM
+    classifier — it's a step up from exact keywords, not full NLU.
+
+    NOTE: short trigger words (like "yo") use word-boundary matching
+    instead of raw substring matching, otherwise they false-positive
+    inside unrelated words ("yo" inside "how are YOu").
+    """
+    q = q.lower().strip()
+    words = set(q.split())
+    best_intent = None
+    best_score = 0.0
+
+    for intent, phrases in INTENT_PHRASES.items():
+        for phrase in phrases:
+            if len(phrase) <= 3:
+                # short phrase -> must match a whole word, not a substring
+                if phrase in words:
+                    return intent
+            elif phrase in q:
+                # longer phrase -> substring match is safe enough
+                return intent
+            score = similarity(phrase, q)
+            if score > best_score:
+                best_score = score
+                best_intent = intent
+
+    if best_score >= FUZZY_THRESHOLD:
+        return best_intent
+
+    return "UNKNOWN"
+
+# ======================================================
+# ================= SEARCH HANDLER =======================
+# ======================================================
+
+def clean_query(query, strip_words):
+    clean = query
+    for w in strip_words:
+        clean = clean.replace(w, "")
+    return clean.strip()
+
+def handle_search(query):
+    clean = clean_query(query, ["search for", "find me", "look up", "search",
+                                  "on youtube", "on google", "youtube", "yt"])
+    if not clean:
+        speak("What should I search for?")
+        return
+
+    if "youtube" in query or "yt" in query:
+        speak(f"Searching YouTube for {clean}")
+        url = f"https://www.youtube.com/results?search_query={clean.replace(' ', '+')}"
+    else:
+        speak(f"Searching Google for {clean}")
+        url = f"https://www.google.com/search?q={clean.replace(' ', '+')}"
+
+    webbrowser.open(url)
+    context["last_intent"] = "SEARCH"
+    context["last_query"] = clean
+
+def handle_wiki(query):
+    clean = clean_query(query, ["what is", "who is", "tell me about", "explain"])
+    if not clean:
+        speak("Who or what should I look up?")
+        return
+
+    try:
+        summary = wikipedia.summary(clean, sentences=2)
+        speak(summary)
+    except wikipedia.exceptions.DisambiguationError as e:
+        speak(f"That's a bit ambiguous. Did you mean: {', '.join(e.options[:3])}?")
+    except wikipedia.exceptions.PageError:
+        speak(f"I couldn't find anything on Wikipedia for {clean}.")
+    except Exception:
+        speak("Something went wrong looking that up.")
+
+    context["last_intent"] = "WIKI_SEARCH"
+    context["last_query"] = clean
+
+# ======================================================
+# ============== FILE SEARCH + APP LAUNCH ================
+# ======================================================
+
+def find_file(query):
+    target = clean_query(query, ["find file", "find folder", "locate file",
+                                   "search my pc for"])
+    if not target:
+        speak("What file or folder should I look for?")
+        return
+
+    speak(f"Searching for {target}, this might take a moment.")
+    matches = []
+    for root, dirs, files in os.walk(SEARCH_ROOT):
+        # skip noisy system/hidden dirs to keep this fast
+        dirs[:] = [d for d in dirs if not d.startswith(".")]
+        for name in files + dirs:
+            if target.lower() in name.lower():
+                matches.append(os.path.join(root, name))
+        if len(matches) >= 5:
+            break
+
+    if not matches:
+        speak(f"No matches found for {target}.")
+        return
+
+    speak(f"Found {len(matches)} match(es):")
+    for m in matches[:5]:
+        print("  -", m)
+
+def open_app(query):
+    app_name = clean_query(query, ["open app", "launch", "start program", "run program"])
+    if not app_name:
+        speak("Which app should I open?")
+        return
+
+    speak(f"Trying to open {app_name}")
+    try:
+        # Works for common Windows apps registered on PATH (notepad, calc, etc.)
+        # and most installed programs findable by name.
+        os.startfile(app_name)
+    except Exception:
+        try:
+            subprocess.Popen(app_name, shell=True)
+        except Exception:
+            speak(f"I couldn't find or launch {app_name}.")
+
+# ======================================================
+# ================= SYSTEM REPORT =========================
+# ======================================================
+
+def system_report():
+    cpu = psutil.cpu_percent()
+    ram = psutil.virtual_memory().percent
+    disk = psutil.disk_usage("/").percent
+
+    print("\n------------------------------------------")
+    print("| Component | Usage |")
+    print("------------------------------------------")
+    print(f"| CPU       | {cpu}% |")
+    print(f"| RAM       | {ram}% |")
+    print(f"| Disk      | {disk}% |")
+    print("------------------------------------------\n")
+
+    speak(f"CPU {cpu} percent, RAM {ram} percent")
+
+# ======================================================
+# ================= GREETING ===========================
+# ======================================================
+
+hour = dt.datetime.now().hour
+if hour < 12:
+    speak(f"Good morning {MASTER}")
+elif hour < 18:
+    speak(f"Good afternoon {MASTER}")
+else:
+    speak(f"Good evening {MASTER}")
+
+speak("Charlie is online. What's up?")
+
+# ======================================================
+# ================= MAIN LOOP ==========================
+# ======================================================
+
+while True:
+    query = input("You: ").lower().strip()
+    if not query:
+        continue
+
+    intent = detect_intent(query)
+
+    if intent == "SEARCH":
+        handle_search(query)
+
+    elif intent == "WIKI_SEARCH":
+        handle_wiki(query)
+
+    elif intent == "PLAY_MUSIC":
+        speak("Playing music")
+        if os.path.exists(MUSIC_DIR):
+            songs = os.listdir(MUSIC_DIR)
+            if songs:
+                os.startfile(os.path.join(MUSIC_DIR, songs[0]))
+            else:
+                speak("No songs found in your music folder.")
+        else:
+            speak("I couldn't find your music folder.")
+
+    elif intent == "OPEN_EDITOR":
+        speak("Opening editor")
+        os.system("notepad")
+
+    elif intent == "OPEN_CMD":
+        speak("Opening command prompt")
+        os.system("start cmd")
+
+    elif intent == "OPEN_YOUTUBE":
+        speak("Opening YouTube")
+        webbrowser.open("https://youtube.com")
+
+    elif intent == "OPEN_GOOGLE":
+        speak("Opening Google")
+        webbrowser.open("https://google.com")
+
+    elif intent == "FIND_FILE":
+        find_file(query)
+
+    elif intent == "OPEN_APP":
+        open_app(query)
+
+    elif intent == "TIME":
+        speak("It's " + dt.datetime.now().strftime("%I:%M %p"))
+
+    elif intent == "SYSTEM_REPORT":
+        speak("Here's the system report")
+        system_report()
+
+    elif intent == "AGAIN" and context["last_intent"] in ("SEARCH", "WIKI_SEARCH"):
+        speak(f"Repeating: {context['last_query']}")
+        if context["last_intent"] == "SEARCH":
+            webbrowser.open(f"https://www.google.com/search?q={context['last_query'].replace(' ', '+')}")
+        else:
+            handle_wiki(f"what is {context['last_query']}")
+
+    elif intent in SMALL_TALK_RESPONSES:
+        speak(random.choice(SMALL_TALK_RESPONSES[intent]))
+
+    elif intent == "EXIT":
+        speak("Alright, see you later")
+        break
+
+    else:
+        speak(random.choice([
+            "Hmm, not sure what you mean.",
+            "Okay, what next?",
+            "I'm listening.",
+            "Could you say that differently?"
+        ]))
