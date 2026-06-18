@@ -15,19 +15,24 @@ def get_metadata(filepath):
     def format_time(time):
         return datetime.datetime.fromtimestamp(time).strftime("%Y-%m-%d")
 
-    ''' raw_metadata = {
-        "size": size_file ,
-        "name": os.path.basename(filepath),
-        "last_modified": modified_timestamp,
-        "created": created_timestamp,
-    }'''
-
     metadata = {
-        "size": format_size(size_file),
         "name": os.path.basename(filepath),
-        "last_modified": format_time(modified_timestamp),
-        "created": format_time(created_timestamp),
+        "size": {
+            "raw": size_file,
+            "formatted": format_size(size_file),
+        },
+
+        "last_modified" : {
+            "raw": modified_timestamp,
+            "formatted": format_time(modified_timestamp),
+        },
+
+        "created": {
+            "raw": created_timestamp,
+            "formatted": format_time(created_timestamp),
+        }
     }
+
     return metadata
 
 
