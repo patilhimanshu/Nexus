@@ -37,7 +37,7 @@ def start_watching():
 
     observer = Observer()
     nexus_observer = NexusObserver()
-    observer.schedule(nexus_observer, path=path, recursive=True)
+    observer.schedule(nexus_observer, path=path, recursive=False)
     observer.start()
     try:
         while True:
