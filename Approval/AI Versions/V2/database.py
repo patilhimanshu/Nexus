@@ -72,6 +72,7 @@ def init_db():
         CREATE TABLE IF NOT EXISTS profile (
             id INTEGER PRIMARY KEY CHECK (id = 1),
             name TEXT,
+            voice_enabled INTEGER DEFAULT NULL,
             created_at TEXT NOT NULL
         )
     """)
@@ -187,6 +188,30 @@ def get_profile():
     row = cur.fetchone()
     conn.close()
     return dict(row) if row else None
+
+
+def set_voice_preference(enabled: bool):
+    """Saves whether the user wants voice on or off. Only asked once —
+    this locks the answer in so Charlie never asks twice. 🎤"""
+    conn = get_connection()
+    cur = conn.cursor()
+    cur.execute("""
+        UPDATE profile SET voice_enabled = ? WHERE id = 1
+    """, (1 if enabled else 0,))
+    conn.commit()
+    conn.close()
+
+
+def has_asked_voice_preference():
+    """Returns True if we've already asked (regardless of yes/no answer),
+    False if this is a fresh install that's never been asked."""
+    profile = get_profile()
+    return profile is not None and profile.get("voice_enabled") is not None
+
+
+def is_voice_enabled():
+    profile = get_profile()
+    return bool(profile["voice_enabled"]) if profile and profile.get("voice_enabled") else False
 
 
 # ------------------------------------------------------
