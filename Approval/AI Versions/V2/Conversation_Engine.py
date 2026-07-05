@@ -137,9 +137,11 @@ intent must be one of: question, task, memory, research, conversation
 action is a short phrase describing what should happen (e.g. "answer
 directly", "create a task", "save as memory", "search the web", "just chat")
 priority must be one of: low, medium, high
-task_type must be one of: text, code, image
+task_type must be one of: text, code, image, file_search
   - "code" if the user wants code written, explained, or debugged
   - "image" if the user wants a picture/image/drawing generated
+  - "file_search" if the user is asking where a file is, or wants to
+    find a file/folder on their computer
   - "text" for everything else (default)
 
 Examples:
@@ -153,7 +155,13 @@ User: "write me a python function to sort a list"
 {"intent": "task", "action": "write code", "priority": "low", "task_type": "code"}
 
 User: "generate an image of a cat wearing sunglasses"
-{"intent": "task", "action": "generate an image", "priority": "low", "task_type": "image"}"""
+{"intent": "task", "action": "generate an image", "priority": "low", "task_type": "image"}
+
+User: "where is my physics PDF"
+{"intent": "question", "action": "search for file", "priority": "low", "task_type": "file_search"}
+
+User: "find my resume"
+{"intent": "question", "action": "search for file", "priority": "low", "task_type": "file_search"}"""
 
 
 def reason_about_message(user_message):
@@ -174,7 +182,7 @@ def reason_about_message(user_message):
             raise ValueError("missing expected keys")
         if result["priority"] not in ("low", "medium", "high"):
             result["priority"] = "medium"
-        if result["task_type"] not in ("text", "code", "image"):
+        if result["task_type"] not in ("text", "code", "image", "file_search"):
             result["task_type"] = "text"
         return result
     except (json.JSONDecodeError, ValueError):
@@ -190,22 +198,34 @@ def route_task(reasoning, user_message):
     """
     Reads reasoning["task_type"] and decides what kind of work this
     turn actually needs:
-      - "image": skip the normal text reply entirely, call get_image()
-      - "code": temporarily switch the text provider to Claude (good
-        at code) for just this one call, then restore whatever the
-        user had configured before
+      - "image": skip text reply, call get_image()
+      - "code": temporarily switch provider to Claude, restore after
+      - "file_search": call Nexus find_file(), return matches
       - "text" (default): no provider switch, normal text reply
 
-    Returns either {"type": "image", "result": {...}} or
-    {"type": "text", "provider_override": "claude" or None}.
-    This function does NOT call the brain itself — it just decides
-    HOW handle_message() should call it.
+    Returns a dict the caller inspects to know which shape it got.
+    This function does NOT call the brain itself.
     """
+    import re
     task_type = reasoning.get("task_type", "text")
 
     if task_type == "image":
         image_result = brain.get_image(user_message)
         return {"type": "image", "result": image_result}
+
+    if task_type == "file_search":
+        # Strip filler phrases to get a clean search query.
+        # "where is my physics PDF" -> "physics PDF"
+        query = user_message.lower()
+        for filler in ["where is my", "where is", "find my", "find",
+                       "locate my", "locate", "search for", "look for",
+                       "can you find", "do you know where"]:
+            query = query.replace(filler, "")
+        query = query.strip().strip("?").strip()
+
+        from nexus_fixed.core.file_search import find_file
+        matches = find_file(query)
+        return {"type": "file_search", "query": query, "matches": matches}
 
     if task_type == "code":
         return {"type": "text", "provider_override": "claude"}
@@ -309,10 +329,27 @@ def handle_message(user_message):
     routing = route_task(reasoning, user_message)
 
     if routing["type"] == "image":
-        # Image turns skip memory/trait extraction for now — that's
-        # a text-conversation concept, not an image-generation one.
+        # Image turns skip memory/trait extraction — that's a
+        # text-conversation concept, not an image-generation one.
         db.log_message("assistant", f"[generated image for: {user_message}]")
         return routing["result"], reasoning
+
+    if routing["type"] == "file_search":
+        query = routing["query"]
+        matches = routing["matches"]
+
+        if not matches:
+            reply = f"I searched Desktop, Downloads, and Documents for '{query}' but couldn't find anything. It might be somewhere else on your PC, or the filename could be slightly different."
+        elif len(matches) == 1:
+            reply = f"Found it! 📂 {matches[0]}"
+        else:
+            paths = "\n".join(f"  - {m}" for m in matches[:5])
+            reply = f"Found {len(matches)} match(es) for '{query}':\n{paths}"
+            if len(matches) > 5:
+                reply += f"\n  ...and {len(matches) - 5} more."
+
+        db.log_message("assistant", reply)
+        return reply, reasoning
 
     # 0.06 Planner — runs whenever the reasoning layer says this is
     # a task, BEFORE the conversational reply, so Charlie's actual
@@ -384,10 +421,11 @@ if __name__ == "__main__":
 
         if reasoning.get("task_type") == "image":
             if "error" in reply:
-                print("Charlie: Couldn't generate that image \u2014", reply["error"])
+                print("Charlie: Couldn't generate that image —", reply["error"])
             elif "image_url" in reply:
                 print("Charlie: Here's your image:", reply["image_url"])
             elif "image_base64" in reply:
                 print("Charlie: Generated an image (base64 data, length:", len(reply["image_base64"]), "chars)")
         else:
+            # covers text, code, file_search — all return a plain string
             print("Charlie:", reply)
