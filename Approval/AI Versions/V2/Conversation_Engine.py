@@ -18,6 +18,7 @@
 #            conversations adapt permanently, not just per-session
 
 import database as db
+import trial_manager as tm
 import ai_brain as brain
 
 
@@ -322,19 +323,39 @@ def handle_message(user_message):
     Returns (reply, reasoning) for text turns, or
     (image_result_dict, reasoning) for image turns — the caller
     needs to check reasoning["task_type"] to know which shape it got.
+
+    Tier gate runs FIRST — if the user's on free tier and hit their
+    session message cap, nothing else executes. No wasted brain
+    calls on a message that's getting blocked anyway. 🚫
     """
+    allowed, block_reason = tm.can_send_message()
+    if not allowed:
+        return block_reason, {"intent": "blocked", "action": "none",
+                                "priority": "low", "task_type": "text"}
+
+    tm.increment_session_messages()
     db.log_message("user", user_message)
 
     reasoning = reason_about_message(user_message)
     routing = route_task(reasoning, user_message)
 
     if routing["type"] == "image":
+        allowed_img, block_msg = tm.can_use_image_gen()
+        if not allowed_img:
+            return block_msg, reasoning
+        tm.increment_daily_image_count()
+
         # Image turns skip memory/trait extraction — that's a
         # text-conversation concept, not an image-generation one.
         db.log_message("assistant", f"[generated image for: {user_message}]")
         return routing["result"], reasoning
 
     if routing["type"] == "file_search":
+        allowed_fs, block_msg = tm.can_use_file_search()
+        if not allowed_fs:
+            return block_msg, reasoning
+        tm.increment_daily_file_search_count()
+
         query = routing["query"]
         matches = routing["matches"]
 
@@ -401,13 +422,33 @@ if __name__ == "__main__":
     db.init_db()
 
     if db.is_first_run():
-        print("Charlie: Hey, I'm Charlie. What should I call you?")
+        print("Charlie: Hey, I'm Charlie. What should I call you? 👋")
         name = input("You: ").strip()
         db.set_profile_name(name)
-        print(f"Charlie: Nice to meet you, {name}!")
+
+        print("Charlie: One more thing — I need an email to set up your free trial. 📧")
+        email = input("Email: ").strip()
+
+        is_abuse, reason = tm.check_trial_abuse(email)
+        if is_abuse:
+            print(f"Charlie: Looks like a trial's already been used on this "
+                  f"{'device' if reason == 'device' else reason}. "
+                  f"You're starting on the free tier instead. 😬")
+            tm.set_tier("free")
+        else:
+            tm.start_trial(email)
+            print(f"Charlie: Nice to meet you, {name}! 🎉 Your 3-month free trial "
+                  f"just started — full access, no limits. Let's get it. 🚀")
+    else:
+        # returning user — check for trial notifications every startup
+        notif = tm.check_trial_notifications()
+        if notif:
+            print(f"Charlie: {notif}")
+
+    tm.reset_session_message_count()  # fresh message cap every new session
 
     profile = db.get_profile()
-    print(f"Charlie: What's up, {profile['name']}?")
+    print(f"Charlie: What's up, {profile['name']}? ✨")
 
     while True:
         user_input = input("You: ").strip()
