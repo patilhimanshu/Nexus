@@ -123,6 +123,35 @@ def init_db():
         )
     """)
 
+    # ---- Trial + tier system ----
+    # One row, tracks the user's current tier and trial status.
+    cur.execute("""
+        CREATE TABLE IF NOT EXISTS user_tier (
+            id INTEGER PRIMARY KEY CHECK (id = 1),
+            tier TEXT NOT NULL DEFAULT 'trial',
+            trial_start TEXT NOT NULL,
+            trial_end TEXT NOT NULL,
+            notified_last_day INTEGER NOT NULL DEFAULT 0,
+            session_message_count INTEGER NOT NULL DEFAULT 0,
+            daily_image_count INTEGER NOT NULL DEFAULT 0,
+            daily_file_search_count INTEGER NOT NULL DEFAULT 0,
+            last_daily_reset TEXT
+        )
+    """)
+
+    # ---- Abuse prevention fingerprints ----
+    # Stores device fingerprint, IP, and email used at trial signup.
+    # If a new install matches any of these, the free trial is denied.
+    cur.execute("""
+        CREATE TABLE IF NOT EXISTS trial_fingerprints (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            device_id TEXT,
+            ip_address TEXT,
+            email TEXT,
+            created_at TEXT NOT NULL
+        )
+    """)
+
     conn.commit()
     conn.close()
 
