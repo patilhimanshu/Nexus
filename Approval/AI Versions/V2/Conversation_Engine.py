@@ -19,6 +19,7 @@
 
 import database as db
 import trial_manager as tm
+import voice_engine as voice
 import ai_brain as brain
 
 
@@ -439,34 +440,54 @@ if __name__ == "__main__":
             tm.start_trial(email)
             print(f"Charlie: Nice to meet you, {name}! 🎉 Your 3-month free trial "
                   f"just started — full access, no limits. Let's get it. 🚀")
-    else:
+
+    # Ask-first voice toggle — ONLY asked once, ever. 🎤 If already
+    # asked (yes or no), db.has_asked_voice_preference() is True and
+    # we skip straight past this.
+    if not db.has_asked_voice_preference():
+        wants_voice = voice.ask_voice_preference()
+        db.set_voice_preference(wants_voice)
+        if wants_voice:
+            print("Charlie: Bet 🔥 voice mode is on. I'll talk and listen from now on.")
+        else:
+            print("Charlie: All good, staying text-only. Can flip this later in settings. ✍️")
+
+    if not db.is_first_run():
         # returning user — check for trial notifications every startup
         notif = tm.check_trial_notifications()
         if notif:
             print(f"Charlie: {notif}")
 
     tm.reset_session_message_count()  # fresh message cap every new session
+    voice_on = db.is_voice_enabled()
 
     profile = db.get_profile()
-    print(f"Charlie: What's up, {profile['name']}? ✨")
+    voice.speak(f"What's up, {profile['name']}? ✨", voice_enabled=voice_on)
 
     while True:
-        user_input = input("You: ").strip()
+        if voice_on:
+            user_input = voice.listen()
+            if user_input is None:
+                continue  # mic didn't catch anything, just loop back
+            print("You (voice):", user_input)
+        else:
+            user_input = input("You: ").strip()
+
         if not user_input:
             continue
         if user_input.lower() in ("exit", "quit", "bye"):
-            print("Charlie: See you later!")
+            voice.speak("See you later! 👋", voice_enabled=voice_on)
             break
 
         reply, reasoning = handle_message(user_input)
 
         if reasoning.get("task_type") == "image":
             if "error" in reply:
-                print("Charlie: Couldn't generate that image —", reply["error"])
+                voice.speak(f"Couldn't generate that image — {reply['error']}", voice_enabled=voice_on)
             elif "image_url" in reply:
-                print("Charlie: Here's your image:", reply["image_url"])
+                voice.speak(f"Here's your image: {reply['image_url']}", voice_enabled=voice_on)
             elif "image_base64" in reply:
-                print("Charlie: Generated an image (base64 data, length:", len(reply["image_base64"]), "chars)")
+                voice.speak(f"Generated an image (base64 data, {len(reply['image_base64'])} chars)", voice_enabled=voice_on)
         else:
             # covers text, code, file_search — all return a plain string
-            print("Charlie:", reply)
+            voice.speak(reply, voice_enabled=voice_on)
