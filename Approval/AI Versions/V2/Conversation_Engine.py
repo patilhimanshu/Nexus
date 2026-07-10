@@ -21,6 +21,7 @@ import database as db
 import trial_manager as tm
 import voice_engine as voice
 import workspace_intelligence as wi
+import research_engine as research
 import ai_brain as brain
 
 
@@ -374,6 +375,15 @@ def handle_message(user_message):
         db.log_message("assistant", reply)
         return reply, reasoning
 
+    # 0.09 Research Engine — for "question" intent, try Wikipedia
+    # FIRST. No separate LLM call to decide if research is needed —
+    # just try it, and if nothing usable comes back, fall through to
+    # a completely normal brain reply. Simpler and more robust than
+    # asking the reasoning layer to guess in advance.
+    research_context = None
+    if reasoning["intent"] == "question":
+        research_context = research.try_research(user_message)
+
     # 0.06 Planner — runs whenever the reasoning layer says this is
     # a task, BEFORE the conversational reply, so Charlie's actual
     # response can reference what just got created ("added 4 tasks
@@ -386,6 +396,13 @@ def handle_message(user_message):
     if created_tasks:
         task_list = "\n".join(f"- {t['title']} ({t['priority']})" for t in created_tasks)
         system_prompt += f"\n\nYou just created these task(s) in the task manager:\n{task_list}\nMention this naturally in your reply."
+    if research_context:
+        system_prompt += (
+            f"\n\nHere's a relevant Wikipedia summary to help answer the "
+            f"user's question. Use it to inform your reply, but phrase it "
+            f"naturally in your own words, don't just paste it verbatim:\n"
+            f"{research_context}"
+        )
 
     recent = db.get_recent_messages(limit=10)
     history = [{"role": m["role"], "content": m["content"]} for m in recent]
