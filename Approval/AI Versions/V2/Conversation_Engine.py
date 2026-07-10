@@ -20,6 +20,7 @@
 import database as db
 import trial_manager as tm
 import voice_engine as voice
+import workspace_intelligence as wi
 import ai_brain as brain
 
 
@@ -460,6 +461,16 @@ if __name__ == "__main__":
 
     tm.reset_session_message_count()  # fresh message cap every new session
     voice_on = db.is_voice_enabled()
+
+    # 0.08 Workspace Intelligence — proactively surface findings on
+    # startup, not just on-demand. Wrapped in try/except since a slow
+    # or failing scan should never block Charlie from actually starting.
+    try:
+        suggestions = wi.generate_suggestions()
+        for s in suggestions:
+            voice.speak(s, voice_enabled=voice_on)
+    except Exception as e:
+        print(f"[workspace intelligence skipped: {e}]")
 
     profile = db.get_profile()
     voice.speak(f"What's up, {profile['name']}? ✨", voice_enabled=voice_on)
