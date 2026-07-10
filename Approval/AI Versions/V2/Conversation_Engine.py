@@ -22,6 +22,7 @@ import trial_manager as tm
 import voice_engine as voice
 import workspace_intelligence as wi
 import research_engine as research
+import knowledge_engine as knowledge
 import ai_brain as brain
 
 
@@ -375,14 +376,21 @@ def handle_message(user_message):
         db.log_message("assistant", reply)
         return reply, reasoning
 
-    # 0.09 Research Engine — for "question" intent, try Wikipedia
-    # FIRST. No separate LLM call to decide if research is needed —
-    # just try it, and if nothing usable comes back, fall through to
-    # a completely normal brain reply. Simpler and more robust than
-    # asking the reasoning layer to guess in advance.
+    # 0.10 Knowledge Engine — check the cache FIRST, before ever
+    # hitting Wikipedia. Fuzzy matching means "einstein" and "who was
+    # einstein" both hit the same cached entry, so we're not
+    # re-researching the same topic every time it comes up.
+    #
+    # 0.09 Research Engine — only runs if the cache misses. Any NEW
+    # finding gets saved to the cache immediately so the next similar
+    # question is instant next time.
     research_context = None
     if reasoning["intent"] == "question":
-        research_context = research.try_research(user_message)
+        research_context = knowledge.check_knowledge_cache(user_message)
+        if research_context is None:
+            research_context = research.try_research(user_message)
+            if research_context:
+                knowledge.save_to_cache(user_message, research_context)
 
     # 0.06 Planner — runs whenever the reasoning layer says this is
     # a task, BEFORE the conversational reply, so Charlie's actual
