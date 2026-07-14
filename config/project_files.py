@@ -1,15 +1,23 @@
-project_files = {
-    "python" : [
+project_file = {
+    "descriptions":[
         "README.md",
+    ],
+    "entry_points":[
+        "main.py",
+        "run.py",
+        "app.py",
+        "wsgi.py",
+        "server.py",
+        "manage.py",
+    ],
+    "dependencies":[
         "requirements.txt",
         "requirements-dev.txt",
-        "main.py"
-        "app.py"
-        "run.py"
-        "server.py"
-        "manage.py"
-        "wsgi.py"
-    ]
-
-
+    ],
+    "configurations":[
+        "config.py",
+        "setup.py",
+        ".env.example",
+        "pyproject.toml",
+    ],
 }
