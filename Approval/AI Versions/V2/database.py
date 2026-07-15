@@ -72,6 +72,7 @@ def init_db():
         CREATE TABLE IF NOT EXISTS profile (
             id INTEGER PRIMARY KEY CHECK (id = 1),
             name TEXT,
+            voice_enabled INTEGER DEFAULT NULL,
             created_at TEXT NOT NULL
         )
     """)
@@ -123,6 +124,35 @@ def init_db():
         )
     """)
 
+    # ---- Trial + tier system ----
+    # One row, tracks the user's current tier and trial status.
+    cur.execute("""
+        CREATE TABLE IF NOT EXISTS user_tier (
+            id INTEGER PRIMARY KEY CHECK (id = 1),
+            tier TEXT NOT NULL DEFAULT 'trial',
+            trial_start TEXT NOT NULL,
+            trial_end TEXT NOT NULL,
+            notified_last_day INTEGER NOT NULL DEFAULT 0,
+            session_message_count INTEGER NOT NULL DEFAULT 0,
+            daily_image_count INTEGER NOT NULL DEFAULT 0,
+            daily_file_search_count INTEGER NOT NULL DEFAULT 0,
+            last_daily_reset TEXT
+        )
+    """)
+
+    # ---- Abuse prevention fingerprints ----
+    # Stores device fingerprint, IP, and email used at trial signup.
+    # If a new install matches any of these, the free trial is denied.
+    cur.execute("""
+        CREATE TABLE IF NOT EXISTS trial_fingerprints (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            device_id TEXT,
+            ip_address TEXT,
+            email TEXT,
+            created_at TEXT NOT NULL
+        )
+    """)
+
     conn.commit()
     conn.close()
 
@@ -158,6 +188,30 @@ def get_profile():
     row = cur.fetchone()
     conn.close()
     return dict(row) if row else None
+
+
+def set_voice_preference(enabled: bool):
+    """Saves whether the user wants voice on or off. Only asked once —
+    this locks the answer in so Charlie never asks twice. 🎤"""
+    conn = get_connection()
+    cur = conn.cursor()
+    cur.execute("""
+        UPDATE profile SET voice_enabled = ? WHERE id = 1
+    """, (1 if enabled else 0,))
+    conn.commit()
+    conn.close()
+
+
+def has_asked_voice_preference():
+    """Returns True if we've already asked (regardless of yes/no answer),
+    False if this is a fresh install that's never been asked."""
+    profile = get_profile()
+    return profile is not None and profile.get("voice_enabled") is not None
+
+
+def is_voice_enabled():
+    profile = get_profile()
+    return bool(profile["voice_enabled"]) if profile and profile.get("voice_enabled") else False
 
 
 # ------------------------------------------------------

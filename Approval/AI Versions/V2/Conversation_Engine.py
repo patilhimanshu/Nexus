@@ -18,6 +18,11 @@
 #            conversations adapt permanently, not just per-session
 
 import database as db
+import trial_manager as tm
+import voice_engine as voice
+import workspace_intelligence as wi
+import research_engine as research
+import knowledge_engine as knowledge
 import ai_brain as brain
 
 
@@ -137,9 +142,11 @@ intent must be one of: question, task, memory, research, conversation
 action is a short phrase describing what should happen (e.g. "answer
 directly", "create a task", "save as memory", "search the web", "just chat")
 priority must be one of: low, medium, high
-task_type must be one of: text, code, image
+task_type must be one of: text, code, image, file_search
   - "code" if the user wants code written, explained, or debugged
   - "image" if the user wants a picture/image/drawing generated
+  - "file_search" if the user is asking where a file is, or wants to
+    find a file/folder on their computer
   - "text" for everything else (default)
 
 Examples:
@@ -153,7 +160,13 @@ User: "write me a python function to sort a list"
 {"intent": "task", "action": "write code", "priority": "low", "task_type": "code"}
 
 User: "generate an image of a cat wearing sunglasses"
-{"intent": "task", "action": "generate an image", "priority": "low", "task_type": "image"}"""
+{"intent": "task", "action": "generate an image", "priority": "low", "task_type": "image"}
+
+User: "where is my physics PDF"
+{"intent": "question", "action": "search for file", "priority": "low", "task_type": "file_search"}
+
+User: "find my resume"
+{"intent": "question", "action": "search for file", "priority": "low", "task_type": "file_search"}"""
 
 
 def reason_about_message(user_message):
@@ -174,7 +187,7 @@ def reason_about_message(user_message):
             raise ValueError("missing expected keys")
         if result["priority"] not in ("low", "medium", "high"):
             result["priority"] = "medium"
-        if result["task_type"] not in ("text", "code", "image"):
+        if result["task_type"] not in ("text", "code", "image", "file_search"):
             result["task_type"] = "text"
         return result
     except (json.JSONDecodeError, ValueError):
@@ -190,22 +203,34 @@ def route_task(reasoning, user_message):
     """
     Reads reasoning["task_type"] and decides what kind of work this
     turn actually needs:
-      - "image": skip the normal text reply entirely, call get_image()
-      - "code": temporarily switch the text provider to Claude (good
-        at code) for just this one call, then restore whatever the
-        user had configured before
+      - "image": skip text reply, call get_image()
+      - "code": temporarily switch provider to Claude, restore after
+      - "file_search": call Nexus find_file(), return matches
       - "text" (default): no provider switch, normal text reply
 
-    Returns either {"type": "image", "result": {...}} or
-    {"type": "text", "provider_override": "claude" or None}.
-    This function does NOT call the brain itself — it just decides
-    HOW handle_message() should call it.
+    Returns a dict the caller inspects to know which shape it got.
+    This function does NOT call the brain itself.
     """
+    import re
     task_type = reasoning.get("task_type", "text")
 
     if task_type == "image":
         image_result = brain.get_image(user_message)
         return {"type": "image", "result": image_result}
+
+    if task_type == "file_search":
+        # Strip filler phrases to get a clean search query.
+        # "where is my physics PDF" -> "physics PDF"
+        query = user_message.lower()
+        for filler in ["where is my", "where is", "find my", "find",
+                       "locate my", "locate", "search for", "look for",
+                       "can you find", "do you know where"]:
+            query = query.replace(filler, "")
+        query = query.strip().strip("?").strip()
+
+        from nexus_fixed.core.file_search import find_file
+        matches = find_file(query)
+        return {"type": "file_search", "query": query, "matches": matches}
 
     if task_type == "code":
         return {"type": "text", "provider_override": "claude"}
@@ -302,17 +327,70 @@ def handle_message(user_message):
     Returns (reply, reasoning) for text turns, or
     (image_result_dict, reasoning) for image turns — the caller
     needs to check reasoning["task_type"] to know which shape it got.
+
+    Tier gate runs FIRST — if the user's on free tier and hit their
+    session message cap, nothing else executes. No wasted brain
+    calls on a message that's getting blocked anyway. 🚫
     """
+    allowed, block_reason = tm.can_send_message()
+    if not allowed:
+        return block_reason, {"intent": "blocked", "action": "none",
+                                "priority": "low", "task_type": "text"}
+
+    tm.increment_session_messages()
     db.log_message("user", user_message)
 
     reasoning = reason_about_message(user_message)
     routing = route_task(reasoning, user_message)
 
     if routing["type"] == "image":
-        # Image turns skip memory/trait extraction for now — that's
-        # a text-conversation concept, not an image-generation one.
+        allowed_img, block_msg = tm.can_use_image_gen()
+        if not allowed_img:
+            return block_msg, reasoning
+        tm.increment_daily_image_count()
+
+        # Image turns skip memory/trait extraction — that's a
+        # text-conversation concept, not an image-generation one.
         db.log_message("assistant", f"[generated image for: {user_message}]")
         return routing["result"], reasoning
+
+    if routing["type"] == "file_search":
+        allowed_fs, block_msg = tm.can_use_file_search()
+        if not allowed_fs:
+            return block_msg, reasoning
+        tm.increment_daily_file_search_count()
+
+        query = routing["query"]
+        matches = routing["matches"]
+
+        if not matches:
+            reply = f"I searched Desktop, Downloads, and Documents for '{query}' but couldn't find anything. It might be somewhere else on your PC, or the filename could be slightly different."
+        elif len(matches) == 1:
+            reply = f"Found it! 📂 {matches[0]}"
+        else:
+            paths = "\n".join(f"  - {m}" for m in matches[:5])
+            reply = f"Found {len(matches)} match(es) for '{query}':\n{paths}"
+            if len(matches) > 5:
+                reply += f"\n  ...and {len(matches) - 5} more."
+
+        db.log_message("assistant", reply)
+        return reply, reasoning
+
+    # 0.10 Knowledge Engine — check the cache FIRST, before ever
+    # hitting Wikipedia. Fuzzy matching means "einstein" and "who was
+    # einstein" both hit the same cached entry, so we're not
+    # re-researching the same topic every time it comes up.
+    #
+    # 0.09 Research Engine — only runs if the cache misses. Any NEW
+    # finding gets saved to the cache immediately so the next similar
+    # question is instant next time.
+    research_context = None
+    if reasoning["intent"] == "question":
+        research_context = knowledge.check_knowledge_cache(user_message)
+        if research_context is None:
+            research_context = research.try_research(user_message)
+            if research_context:
+                knowledge.save_to_cache(user_message, research_context)
 
     # 0.06 Planner — runs whenever the reasoning layer says this is
     # a task, BEFORE the conversational reply, so Charlie's actual
@@ -326,6 +404,13 @@ def handle_message(user_message):
     if created_tasks:
         task_list = "\n".join(f"- {t['title']} ({t['priority']})" for t in created_tasks)
         system_prompt += f"\n\nYou just created these task(s) in the task manager:\n{task_list}\nMention this naturally in your reply."
+    if research_context:
+        system_prompt += (
+            f"\n\nHere's a relevant Wikipedia summary to help answer the "
+            f"user's question. Use it to inform your reply, but phrase it "
+            f"naturally in your own words, don't just paste it verbatim:\n"
+            f"{research_context}"
+        )
 
     recent = db.get_recent_messages(limit=10)
     history = [{"role": m["role"], "content": m["content"]} for m in recent]
@@ -364,30 +449,81 @@ if __name__ == "__main__":
     db.init_db()
 
     if db.is_first_run():
-        print("Charlie: Hey, I'm Charlie. What should I call you?")
+        print("Charlie: Hey, I'm Charlie. What should I call you? 👋")
         name = input("You: ").strip()
         db.set_profile_name(name)
-        print(f"Charlie: Nice to meet you, {name}!")
+
+        print("Charlie: One more thing — I need an email to set up your free trial. 📧")
+        email = input("Email: ").strip()
+
+        is_abuse, reason = tm.check_trial_abuse(email)
+        if is_abuse:
+            print(f"Charlie: Looks like a trial's already been used on this "
+                  f"{'device' if reason == 'device' else reason}. "
+                  f"You're starting on the free tier instead. 😬")
+            tm.set_tier("free")
+        else:
+            tm.start_trial(email)
+            print(f"Charlie: Nice to meet you, {name}! 🎉 Your 3-month free trial "
+                  f"just started — full access, no limits. Let's get it. 🚀")
+
+    # Ask-first voice toggle — ONLY asked once, ever. 🎤 If already
+    # asked (yes or no), db.has_asked_voice_preference() is True and
+    # we skip straight past this.
+    if not db.has_asked_voice_preference():
+        wants_voice = voice.ask_voice_preference()
+        db.set_voice_preference(wants_voice)
+        if wants_voice:
+            print("Charlie: Bet 🔥 voice mode is on. I'll talk and listen from now on.")
+        else:
+            print("Charlie: All good, staying text-only. Can flip this later in settings. ✍️")
+
+    if not db.is_first_run():
+        # returning user — check for trial notifications every startup
+        notif = tm.check_trial_notifications()
+        if notif:
+            print(f"Charlie: {notif}")
+
+    tm.reset_session_message_count()  # fresh message cap every new session
+    voice_on = db.is_voice_enabled()
+
+    # 0.08 Workspace Intelligence — proactively surface findings on
+    # startup, not just on-demand. Wrapped in try/except since a slow
+    # or failing scan should never block Charlie from actually starting.
+    try:
+        suggestions = wi.generate_suggestions()
+        for s in suggestions:
+            voice.speak(s, voice_enabled=voice_on)
+    except Exception as e:
+        print(f"[workspace intelligence skipped: {e}]")
 
     profile = db.get_profile()
-    print(f"Charlie: What's up, {profile['name']}?")
+    voice.speak(f"What's up, {profile['name']}? ✨", voice_enabled=voice_on)
 
     while True:
-        user_input = input("You: ").strip()
+        if voice_on:
+            user_input = voice.listen()
+            if user_input is None:
+                continue  # mic didn't catch anything, just loop back
+            print("You (voice):", user_input)
+        else:
+            user_input = input("You: ").strip()
+
         if not user_input:
             continue
         if user_input.lower() in ("exit", "quit", "bye"):
-            print("Charlie: See you later!")
+            voice.speak("See you later! 👋", voice_enabled=voice_on)
             break
 
         reply, reasoning = handle_message(user_input)
 
         if reasoning.get("task_type") == "image":
             if "error" in reply:
-                print("Charlie: Couldn't generate that image \u2014", reply["error"])
+                voice.speak(f"Couldn't generate that image — {reply['error']}", voice_enabled=voice_on)
             elif "image_url" in reply:
-                print("Charlie: Here's your image:", reply["image_url"])
+                voice.speak(f"Here's your image: {reply['image_url']}", voice_enabled=voice_on)
             elif "image_base64" in reply:
-                print("Charlie: Generated an image (base64 data, length:", len(reply["image_base64"]), "chars)")
+                voice.speak(f"Generated an image (base64 data, {len(reply['image_base64'])} chars)", voice_enabled=voice_on)
         else:
-            print("Charlie:", reply)
+            # covers text, code, file_search — all return a plain string
+            voice.speak(reply, voice_enabled=voice_on)
