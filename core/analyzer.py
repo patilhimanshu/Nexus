@@ -55,6 +55,7 @@ If you don't know something, say so clearly."""
 
 filepath = choose_folder()
 if filepath is None:
+    print("No file selected")
     exit()
 
 files_main = find_project_files(filepath)
