@@ -1,6 +1,8 @@
 import os
 import tkinter as tk
 from tkinter import filedialog
+import requests
+
 from config.project_files import project_file
 
 def choose_folder():
@@ -32,9 +34,32 @@ def read_files(files):
             combined_summary.append(file + ":-" + content_base + "\n")
     return combined_summary
 
+def query_project(data):
+    system_prompt = """You are Nexus, an intelligent project assistant and developer companion.
+You have been given the full context of the user's project including their code,
+dependencies, and documentation. Your job is to answer questions about this project
+accurately, concisely, and helpfully. Be professional but approachable.
+Never make up information — only answer based on what you know from the project files provided.
+If you don't know something, say so clearly."""
+    while True:
+        question = input("What would you like to ask?(Type bye to quit):")
+        if question == "bye":
+            break
+        else:
+            prompt = f"{system_prompt}\n\nProject Context:\n{data}\n\nUser Question:\n{question}"
+            model = "gemma3"
+            response = requests.post("http://localhost:11434/api/generate", json={"model": model , "prompt": prompt, "stream" : False})
+            answer = response.json()["response"]
+            print(f"\nNexus: {answer}\n")
+
+
 filepath = choose_folder()
+if filepath is None:
+    exit()
+
 files_main = find_project_files(filepath)
 content = read_files(files_main)
 combined = "\n".join(content)
-print(combined)
-print(files_main)
+query_project(combined)
+
+
