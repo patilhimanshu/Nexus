@@ -6,6 +6,7 @@ from core.intent_classifier import build_context
 from dotenv import load_dotenv
 load_dotenv()
 import requests
+import json
 
 from config.project_files import project_file
 
@@ -23,12 +24,13 @@ def analyzer():
             print("Ok ✌️")
     def find_project_files(file_path):
         filtered_files = []
-        files = os.listdir(file_path)
-        for file in files:
-            for category, file_list in project_file.items():
-                if file.lower() in [f.lower() for f in file_list]:
-                    full_path = os.path.join(file_path, file)
-                    filtered_files.append(full_path)
+        for root,dirs,files in os.walk(file_path):
+
+            for file in files:
+                for category, file_list in project_file.items():
+                    if file.lower() in [f.lower() for f in file_list]:
+                        full_path = os.path.join(root, file)
+                        filtered_files.append(full_path)
         return filtered_files
 
     def read_files(files):
@@ -36,7 +38,10 @@ def analyzer():
         for file in files:
             with open(file, "r", encoding="utf-8") as f:
                 content_base = f.read()
-                combined_summary.append(file + ":-" + content_base + "\n")
+                relative_path = os.path.relpath(file, filepath).replace("\\", "/")
+                combined_summary.append(
+                    f"\n===== {relative_path} =====\n{content_base}\n"
+                )
         return combined_summary
 
     def query_project(data):
@@ -76,7 +81,6 @@ def analyzer():
                         chunk_str = chunk.decode("utf-8").replace("data: ", "")
                         if chunk_str == "[DONE]":
                             break
-                        import json
                         chunk_data = json.loads(chunk_str)
                         delta = chunk_data["choices"][0]["delta"].get("content", "")
                         print(delta, end="", flush=True)
