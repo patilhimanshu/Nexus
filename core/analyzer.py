@@ -1,6 +1,8 @@
 import os
 import tkinter as tk
 from tkinter import filedialog
+from core.intent_classifier import detect_intent
+from core.intent_classifier import build_context
 import requests
 
 from config.project_files import project_file
@@ -44,10 +46,15 @@ def analyzer():
     If you don't know something, say so clearly."""
         while True:
             question = input("What would you like to ask?(Type bye to quit):")
+            summary = "It is a modular workspace"
+
             if question == "bye":
                 break
             else:
-                prompt = f"{system_prompt}\n\nProject Context:\n{data}\n\nUser Question:\n{question}"
+                intent = detect_intent(question)
+                print(f"Detected intent: {intent}")
+                system_prompt = build_context(intent, data, summary)
+                prompt = f"{system_prompt}\n\nUser Question:\n{question}"
                 model = "gemma3"
                 response = requests.post("http://localhost:11434/api/generate", json={"model": model , "prompt": prompt, "stream" : False})
                 answer = response.json()["response"]
