@@ -1,11 +1,18 @@
 
 from core.watcher import start_watching
 from core.scanner import start_scan
+from core.analyzer import analyzer
 import time
 def main():
-    start_scan()
-    start_watching()
     while True:
+        start_organize = input("Hii, want Nexus to begin scan and organize the files?(yes/no):")
+        analyzer()
+        if start_organize == "yes":
+            start_scan()
+            start_watching()
+        else:
+            print("Ok ✌️")
+            break
         time.sleep(1)
 if __name__ == '__main__':
     main()
