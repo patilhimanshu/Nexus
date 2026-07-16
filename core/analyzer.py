@@ -64,12 +64,23 @@ def analyzer():
                     headers={"Authorization": f"Bearer {api_key}"},
                     json={
                         "model": "llama-3.3-70b-versatile",
-                        "messages": [{"role": "user", "content": prompt}]
-                    }
+                        "messages": [{"role": "user", "content": prompt}],
+                        "stream": True
+                    },
+                    stream=True
                 )
-                answer = response.json()["choices"][0]["message"]["content"]
-                print(f"\nNexus: {answer}\n")
 
+                print("\nNexus: ", end="", flush=True)
+                for chunk in response.iter_lines():
+                    if chunk:
+                        chunk_str = chunk.decode("utf-8").replace("data: ", "")
+                        if chunk_str == "[DONE]":
+                            break
+                        import json
+                        chunk_data = json.loads(chunk_str)
+                        delta = chunk_data["choices"][0]["delta"].get("content", "")
+                        print(delta, end="", flush=True)
+                print("\n")
 
     filepath = choose_folder()
     if filepath is None:
