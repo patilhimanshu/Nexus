@@ -51,6 +51,7 @@ def analyzer():
     accurately, concisely, and helpfully. Be professional but approachable.
     Never make up information — only answer based on what you know from the project files provided.
     If you don't know something, say so clearly."""
+        conversation_history = []
         while True:
             question = input("What would you like to ask?(Type bye to quit):")
             summary = "It is a modular workspace"
@@ -60,21 +61,19 @@ def analyzer():
             else:
                 api_key = os.getenv("GROQ_API_KEY")
                 intent = detect_intent(question)
-                print(f"Detected intent: {intent}")
                 system_prompt = build_context(intent, data, summary)
-                print(f"System prompt length: {len(system_prompt)}")
                 prompt = f"{system_prompt}\n\nUser Question:\n{question}"
                 response = requests.post(
                     "https://api.groq.com/openai/v1/chat/completions",
                     headers={"Authorization": f"Bearer {api_key}"},
                     json={
                         "model": "llama-3.3-70b-versatile",
-                        "messages": [{"role": "user", "content": prompt}],
+                        "messages": conversation_history + [{"role": "user", "content": prompt}],
                         "stream": True
                     },
                     stream=True
                 )
-
+                full_answer = ""
                 print("\nNexus: ", end="", flush=True)
                 for chunk in response.iter_lines():
                     if chunk:
@@ -84,7 +83,11 @@ def analyzer():
                         chunk_data = json.loads(chunk_str)
                         delta = chunk_data["choices"][0]["delta"].get("content", "")
                         print(delta, end="", flush=True)
+                        full_answer += delta
                 print("\n")
+                conversation_history.append({"role":"user", "content": prompt})
+                conversation_history.append({"role":"assistant", "content": full_answer})
+
 
     filepath = choose_folder()
     if filepath is None:
