@@ -1,5 +1,10 @@
 import requests
+from dotenv import load_dotenv
+import os
+load_dotenv()
+
 def detect_intent(question):
+
     system_prompt = f"""Classify the following question into exactly one of these categories:
 - casual: greetings, small talk, emotions
 - general: coding or tech questions not related to a specific project
@@ -9,8 +14,16 @@ def detect_intent(question):
 Reply with ONLY one word. No explanation. No punctuation.
 
 Question: {question}"""
-    response = requests.post("http://localhost:11434/api/generate", json={"model": "gemma3", "prompt": system_prompt, "stream" : False})
-    answer = response.json()["response"]
+    api_key = os.getenv("GROQ_API_KEY")
+    response = requests.post(
+        "https://api.groq.com/openai/v1/chat/completions",
+        headers={"Authorization": f"Bearer {api_key}"},
+        json={
+            "model": "meta-llama/llama-4-scout-17b-16e-instruct",
+            "messages": [{"role": "user", "content": system_prompt}]
+        }
+    )
+    answer = response.json()["choices"][0]["message"]["content"]
     return answer
 
 
@@ -18,7 +31,9 @@ def build_context(intent, full_context, summary):
     base_identity = "You are Nexus, a smart modular AI workspace assistant designed to help developers manage their projects, files, and workflows.If you dont know something, dont hallucinate, say clearly what you do not know and possibly ask user for more data"
 
     if intent == "casual":
-        personality = "You now have a fun,sarcastic, highly energetic and positive personality towards the user. Use different emojis to express yourself, and try to cheer up the user"
+        personality = """IMPORTANT: This is casual small talk. The user is NOT asking for help with a task. 
+Just respond like a fun, energetic friend. Keep it short. Use emojis. Do NOT ask clarifying questions.
+Example response to "hey what's up": "Heyyyy! 🔥 Not much, just vibing and ready to help whenever you need me! What's good? 😄"."""
         system_prompt = f"""{base_identity}, Personality: {personality}"""
         return system_prompt
 
@@ -34,8 +49,7 @@ def build_context(intent, full_context, summary):
 
     elif intent == "project":
         personality = "You have a very professional personality and deeply focused in helping the user with the given context. Use the context wisely and answer user's questions accordingly. Use emojis to express yourself sometimes"
-        context = full_context
-        system_prompt = f"""{base_identity}, Personality: {personality}, Project Context: {context}"""
+        system_prompt = f"""{base_identity}, Personality: {personality}, Project Context: {full_context}"""
         return system_prompt
 
     else:

@@ -3,6 +3,8 @@ import tkinter as tk
 from tkinter import filedialog
 from core.intent_classifier import detect_intent
 from core.intent_classifier import build_context
+from dotenv import load_dotenv
+load_dotenv()
 import requests
 
 from config.project_files import project_file
@@ -51,13 +53,21 @@ def analyzer():
             if question == "bye":
                 break
             else:
+                api_key = os.getenv("GROQ_API_KEY")
                 intent = detect_intent(question)
                 print(f"Detected intent: {intent}")
                 system_prompt = build_context(intent, data, summary)
+                print(f"System prompt length: {len(system_prompt)}")
                 prompt = f"{system_prompt}\n\nUser Question:\n{question}"
-                model = "gemma3"
-                response = requests.post("http://localhost:11434/api/generate", json={"model": model , "prompt": prompt, "stream" : False})
-                answer = response.json()["response"]
+                response = requests.post(
+                    "https://api.groq.com/openai/v1/chat/completions",
+                    headers={"Authorization": f"Bearer {api_key}"},
+                    json={
+                        "model": "llama-3.3-70b-versatile",
+                        "messages": [{"role": "user", "content": prompt}]
+                    }
+                )
+                answer = response.json()["choices"][0]["message"]["content"]
                 print(f"\nNexus: {answer}\n")
 
 
