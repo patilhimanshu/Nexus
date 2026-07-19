@@ -1,25 +1,20 @@
 import requests
 from dotenv import load_dotenv
 import os
-load_dotenv()
+from config.models import INTENT_MODEL
+from config.model_prompt import system_prompt_intent
+from config.model_prompt import base_identity, casual_personality, general_personality, mixed_personality, context_personality
+
 
 def detect_intent(question):
 
-    system_prompt = f"""Classify the following question into exactly one of these categories:
-- casual: greetings, small talk, emotions
-- general: coding or tech questions not related to a specific project
-- mixed: contains both greeting and project related content
-- project: specific questions about the user's project
-
-Reply with ONLY one word. No explanation. No punctuation.
-
-Question: {question}"""
+    system_prompt = system_prompt_intent.format(question = question)
     api_key = os.getenv("GROQ_API_KEY")
     response = requests.post(
         "https://api.groq.com/openai/v1/chat/completions",
         headers={"Authorization": f"Bearer {api_key}"},
         json={
-            "model": "meta-llama/llama-4-scout-17b-16e-instruct",
+            "model": INTENT_MODEL,
             "messages": [{"role": "user", "content": system_prompt}]
         }
     )
@@ -28,28 +23,21 @@ Question: {question}"""
 
 
 def build_context(intent, full_context, summary):
-    base_identity = "You are Nexus, a smart modular AI workspace assistant designed to help developers manage their projects, files, and workflows.If you dont know something, dont hallucinate, say clearly what you do not know and possibly ask user for more data"
 
     if intent == "casual":
-        personality = """IMPORTANT: This is casual small talk. The user is NOT asking for help with a task. 
-Just respond like a fun, energetic friend. Keep it short. Use emojis. Do NOT ask clarifying questions.
-Example response to "hey what's up": "Heyyyy! 🔥 Not much, just vibing and ready to help whenever you need me! What's good? 😄"."""
-        system_prompt = f"""{base_identity}, Personality: {personality}"""
+        system_prompt = f"""{base_identity}, Personality: {casual_personality}"""
         return system_prompt
 
     elif intent == "general":
-        personality = "You have a professional but user-friendly personality. Use different emojis to express yourself, and try to be helpful towards the user"
-        system_prompt = f"""{base_identity}, Personality: {personality}"""
+        system_prompt = f"""{base_identity}, Personality: {general_personality}"""
         return system_prompt
 
     elif intent == "mixed":
-        personality = "You have a fun and professional personality. Be cheerful and help the user with the given context.Use professional emojis or understand the user's mood and answer accordingly"
-        system_prompt = f"""{base_identity}, Personality: {personality}, Summary: {summary}"""
+        system_prompt = f"""{base_identity}, Personality: {mixed_personality}, Summary: {summary}"""
         return system_prompt
 
     elif intent == "project":
-        personality = "You have a very professional personality and deeply focused in helping the user with the given context. Use the context wisely and answer user's questions accordingly. Use emojis to express yourself sometimes"
-        system_prompt = f"""{base_identity}, Personality: {personality}, Project Context: {full_context}"""
+        system_prompt = f"""{base_identity}, Personality: {context_personality}, Project Context: {full_context}"""
         return system_prompt
 
     else:

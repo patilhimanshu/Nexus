@@ -7,6 +7,8 @@ from dotenv import load_dotenv
 load_dotenv()
 import requests
 import json
+from config.models import RESPONSE_MODEL
+from config.models import system_prompt
 
 from config.project_files import project_file
 
@@ -45,12 +47,6 @@ def analyzer():
         return combined_summary
 
     def query_project(data):
-        system_prompt = """You are Nexus, an intelligent project assistant and developer companion.
-    You have been given the full context of the user's project including their code,
-    dependencies, and documentation. Your job is to answer questions about this project
-    accurately, concisely, and helpfully. Be professional but approachable.
-    Never make up information — only answer based on what you know from the project files provided.
-    If you don't know something, say so clearly."""
         conversation_history = []
         while True:
             question = input("What would you like to ask?(Type bye to quit):")
@@ -67,7 +63,7 @@ def analyzer():
                     "https://api.groq.com/openai/v1/chat/completions",
                     headers={"Authorization": f"Bearer {api_key}"},
                     json={
-                        "model": "llama-3.3-70b-versatile",
+                        "model": RESPONSE_MODEL,
                         "messages": conversation_history + [{"role": "user", "content": prompt}],
                         "stream": True
                     },
