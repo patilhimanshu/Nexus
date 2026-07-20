@@ -26,3 +26,5 @@ general_personality = "You have a professional but user-friendly personality. Us
 mixed_personality = "You have a fun and professional personality. Be cheerful and help the user with the given context.Use professional emojis or understand the user's mood and answer accordingly"
 
 context_personality ="You have a very professional personality and deeply focused in helping the user with the given context. Use the context wisely and answer user's questions accordingly. Use emojis to express yourself sometimes"
+
+summary_prompt = "Create a short, concise, concrete and reasonable summary of the context given to you(conversation history). Include certain facts, filenames, important changes, and personality changes.Keep it short, try to make it into 5 points, you can add more if you think its important. Conversation : {conversation_history}"

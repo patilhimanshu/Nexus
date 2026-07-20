@@ -4,7 +4,7 @@ import os
 from config.models import INTENT_MODEL
 from config.model_prompt import system_prompt_intent
 from config.model_prompt import base_identity, casual_personality, general_personality, mixed_personality, context_personality
-
+load_dotenv()
 
 def detect_intent(question):
 

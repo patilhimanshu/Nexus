@@ -8,8 +8,8 @@ load_dotenv()
 import requests
 import json
 from config.models import RESPONSE_MODEL
-from config.models import system_prompt
-
+from config.model_prompt import system_prompt
+from core.memory import summarize_and_save, load_memory
 from config.project_files import project_file
 
 def analyzer():
@@ -48,27 +48,31 @@ def analyzer():
 
     def query_project(data):
         conversation_history = []
+        past_memory = load_memory()
         while True:
             question = input("What would you like to ask?(Type bye to quit):")
             summary = "It is a modular workspace"
 
             if question == "bye":
+                if len(conversation_history) > 0:
+                    summarize_and_save(conversation_history, filepath)
                 break
             else:
                 api_key = os.getenv("GROQ_API_KEY")
                 intent = detect_intent(question)
-                system_prompt = build_context(intent, data, summary)
-                prompt = f"{system_prompt}\n\nUser Question:\n{question}"
+                system_prompt_built = build_context(intent, data, summary)
+                prompt = f"{system_prompt_built}\n\nPast Session Memory:\n{past_memory}\n\nUser Question:\n{question}"
                 response = requests.post(
                     "https://api.groq.com/openai/v1/chat/completions",
                     headers={"Authorization": f"Bearer {api_key}"},
                     json={
                         "model": RESPONSE_MODEL,
-                        "messages": conversation_history + [{"role": "user", "content": prompt}],
+                        "messages" : conversation_history + [{"role": "user", "content": prompt}],
                         "stream": True
                     },
                     stream=True
                 )
+
                 full_answer = ""
                 print("\nNexus: ", end="", flush=True)
                 for chunk in response.iter_lines():
