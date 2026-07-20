@@ -4,13 +4,14 @@ from tkinter import filedialog
 from core.intent_classifier import detect_intent
 from core.intent_classifier import build_context
 from dotenv import load_dotenv
-load_dotenv()
 import requests
 import json
 from config.models import RESPONSE_MODEL
 from config.model_prompt import system_prompt
 from core.memory import summarize_and_save, load_memory
 from config.project_files import project_file
+load_dotenv()
+
 
 def analyzer():
     def choose_folder():
