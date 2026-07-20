@@ -13,6 +13,8 @@ from config.project_files import project_file
 load_dotenv()
 
 
+
+
 def analyzer():
     def choose_folder():
         answer = input("Would you like Nexus to understand your project? (yes/no): ")
@@ -25,6 +27,7 @@ def analyzer():
             return file_path
         else:
             print("Ok ✌️")
+
     def find_project_files(file_path):
         filtered_files = []
         for root,dirs,files in os.walk(file_path):

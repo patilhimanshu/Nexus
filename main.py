@@ -6,13 +6,13 @@ import time
 def main():
     while True:
         start_organize = input("Hii, want Nexus to begin scan and organize the files?(yes/no):")
-        analyzer()
         if start_organize == "yes":
             start_scan()
             start_watching()
         else:
             print("Ok ✌️")
-            break
+        analyzer()
         time.sleep(1)
+        break
 if __name__ == '__main__':
     main()
