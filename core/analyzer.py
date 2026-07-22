@@ -110,6 +110,9 @@ def analyzer():
                         if chunk_str == "[DONE]":
                             break
                         chunk_data = json.loads(chunk_str)
+                        if "error" in chunk_data:
+                            print(chunk_data["error"]["message"])
+                            break
                         delta = chunk_data["choices"][0]["delta"].get("content", "")
                         print(delta, end="", flush=True)
                         full_answer += delta
