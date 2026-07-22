@@ -6,6 +6,21 @@ from datetime import datetime
 from config.model_prompt import summary_prompt
 from dotenv import load_dotenv
 load_dotenv()
+
+def summary(conversation_history):
+    prompt = summary_prompt.format(conversation_history=conversation_history)
+    api_key = os.getenv('GROQ_API_KEY')
+    response = requests.post(
+        "https://api.groq.com/openai/v1/chat/completions",
+        headers={"Authorization": f"Bearer {api_key}"},
+        json={
+            "model": SUMMARY_MODEL,
+            "messages": [{"role": "user", "content": prompt}]
+        }
+    )
+    answer = response.json()["choices"][0]["message"]["content"]
+    return answer
+
 def summarize_and_save(conversation_history, project_path):
     date = datetime.now().strftime("%d-%m-%Y %H:%M:%S")
     prompt = summary_prompt.format(conversation_history=conversation_history)

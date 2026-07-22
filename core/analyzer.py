@@ -10,6 +10,7 @@ from config.models import RESPONSE_MODEL
 from config.model_prompt import system_prompt
 from core.memory import summarize_and_save, load_memory
 from config.project_files import project_file
+from core.memory import summary
 load_dotenv()
 
 
@@ -52,10 +53,13 @@ def analyzer():
 
     def query_project(data):
         conversation_history = []
+        summary_history = "No summary available yet."
         past_memory = load_memory()
+
         while True:
             question = input("What would you like to ask?(Type bye to quit):")
-            summary = "It is a modular workspace"
+            if len(conversation_history) > 0 and len(conversation_history) % 16 == 0:
+                summary_history = summary(conversation_history)
 
             if question == "bye":
                 if len(conversation_history) > 0:
@@ -64,14 +68,35 @@ def analyzer():
             else:
                 api_key = os.getenv("GROQ_API_KEY")
                 intent = detect_intent(question)
-                system_prompt_built = build_context(intent, data, summary)
-                prompt = f"{system_prompt_built}\n\nPast Session Memory:\n{past_memory}\n\nUser Question:\n{question}"
+                system_prompt_built = build_context(intent, data, summary_history)
+                messages = [
+                    {
+                        "role": "system",
+                        "content": system_prompt,
+
+                    },
+                    {
+                        "role": "system",
+                        "content": f"Past Session Memory:\n{past_memory}",
+                    },
+                    {
+                        "role": "system",
+                        "content": f"Personality and context:\n{system_prompt_built}"
+                    }
+                    ]
+                messages += conversation_history
+                messages.append(
+                    {
+                        "role": "user",
+                        "content": question,
+                    }
+                )
                 response = requests.post(
                     "https://api.groq.com/openai/v1/chat/completions",
                     headers={"Authorization": f"Bearer {api_key}"},
                     json={
                         "model": RESPONSE_MODEL,
-                        "messages" : conversation_history + [{"role": "user", "content": prompt}],
+                        "messages" : messages,
                         "stream": True
                     },
                     stream=True
@@ -89,7 +114,7 @@ def analyzer():
                         print(delta, end="", flush=True)
                         full_answer += delta
                 print("\n")
-                conversation_history.append({"role":"user", "content": prompt})
+                conversation_history.append({"role":"user", "content": question})
                 conversation_history.append({"role":"assistant", "content": full_answer})
 
 
